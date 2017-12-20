@@ -1,0 +1,129 @@
+#!/bin/bash
+#
+# See usage().
+
+[[ -n $DEBUG ]] && set -x
+
+set -eou pipefail
+IFS=$'\n\t'
+
+# We do this so the called script name variable is available in utility functions
+# below, in case of name change, brew alias, etc.
+SCRIPT=`basename ${BASH_SOURCE[0]}`
+
+usage() {
+  cat <<EOF
+${SCRIPT}(1)
+
+NAME
+    ${SCRIPT} - Ephemeral cluster testing utility.
+
+REQUIRES
+    kubectl(1)
+
+SYNOPSIS
+    ${SCRIPT} [OPTIONS]
+
+DESCRIPTION
+    ${SCRIPT} is a k8s testing cluster creator. ${SCRIPT} prompts for:
+      - <UP> (creates a gke cluster)
+      - <AUTH> (authenticates using user credentials)
+      - <DOWN> (deletes the gke test cluster created by cluster up)
+    ENTER to use defaults.
+
+OPTIONS
+    -h, --help
+        Show this help message
+    -u, --up
+        creates a gke cluster
+    -a, --auth
+        authenticates using user credentials
+    -d, --down
+        deletes the gke test cluster created by cluster up
+
+SEE ALSO
+    kubectx(1), kubens(1), kex(1)
+EOF
+}
+
+
+
+# This script creates an ephemeral k8s cluster on GKE for test suites,
+# and allows for the cluster deletion once testing is complete.
+
+make_test_cluster() {
+# We don't want to go mucking up more permanent cluster credentials, so make a throw-away directory
+  mkdir -p $HOME/test-cluster
+  TS=`date '+%Y%m%d%H%M%S'`
+  CLUSTER_NAME=$USER-$TS
+  AUTH_PATH=$HOME/test-cluster
+  AUTH_FILE=$AUTH_PATH/config
+  CLUSTER_STORE=$AUTH_PATH/$CLUSTER_NAME
+  ZONE=${ZONE:-us-central1-a}
+
+  #We need to store the name of the cluster to recall when time to purge
+  touch $CLUSTER_STORE
+  echo "$CLUSTER_NAME" > $CLUSTER_STORE
+  gcloud container clusters create $CLUSTER_NAME --zone=$ZONE --max-nodes=2 --min-nodes=1
+}
+
+cluster_auth() {
+  ZONE=${ZONE:-us-central1-a}
+  CLUSTER_PATH=$HOME/test-cluster
+  CLUSTER_NAME=$(cat $CLUSTER_PATH/$USER*)
+  gcloud container clusters get-credentials $CLUSTER_NAME --zone=$ZONE
+  kubectl get nodes
+}
+
+# Do stuff in your test cluster
+
+delete_test_cluster() {
+  CLUSTER_PATH=$HOME/test-cluster
+  CLUSTER_NAME=$(cat $CLUSTER_PATH/$USER*)
+  ZONE=${ZONE:-us-central1-a}
+  gcloud container clusters delete $CLUSTER_NAME --zone=$ZONE
+  rm -rf $HOME/test-cluster
+}
+
+# Transform long options to short ones. Sick trick.
+# http://stackoverflow.com/a/30026641/4096495
+for arg in "$@"; do
+  shift
+  case "$arg" in
+    "--up")       set -- "$@" "-u" ;;
+    "--auth")     set -- "$@" "-a" ;;
+    "--down")     set -- "$@" "-a" ;;
+    *)            set -- "$@" "$arg"
+  esac
+done
+
+while getopts :uadh OPT; do
+  case $OPT in
+    h ) HELP=true;;
+    u ) UP=true;;
+    a ) AUTH=true;;
+    d ) DOWN=true;;
+    \?) echo "Unknown option: -$OPTARG" >&2; exit 1;;
+    : ) echo "Missing option argument for -$OPTARG" >&2; exit 1;;
+  esac
+done
+shift $((OPTIND-1))
+
+# Help and other commands should not happen simultaneously, so elif.
+if [[ ${HELP:-} == 'true' ]]; then
+  usage; exit 0
+else
+  if [[ ${UP:-} == 'true' ]]; then
+    make_test_cluster exit 0
+  else
+    if [[ ${AUTH:-} == 'true' ]]; then
+      cluster_auth
+      auth_test exit 0
+    else
+      if [[ ${DOWN:-} == 'true' ]]; then
+        delete_test_cluster exit 0
+      fi
+    fi
+  fi
+  make_test_cluster
+fi

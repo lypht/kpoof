@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+# See usage().
+
+[[ -n $DEBUG ]] && set -x
+
+set -eou pipefail
+IFS=$'\n\t'
+
+# We do this so the called script name variable is available in utility functions
+# below, in case of name change, brew alias, etc.
+SCRIPT=`basename ${BASH_SOURCE[0]}`
 
 # The test cluster should be up and running, and your connection should respond from the cli to `kubectl get nodes`
 # TODO: Write cluster creation script.
