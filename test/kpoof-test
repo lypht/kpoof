@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# The test cluster should be up and running, and your connection should respond from the cli to `kubectl get nodes`
+# TODO: Write cluster creation script.
+# The test cluster has two namespaces, each with two pods.
+#   Namespace1:
+#   - NS1P1PT1: One container, one port exposed.
+#     NS1P2PT2: One container, multiple ports exposed.
+#   Namespace2:
+#   - NS2P1PT1: Two containers, one port exposed on each.
+#   - NS2P2PT2: Two cointainers, multiple ports exposed.
+
+# Test sequence for kpoof: Iterate through kpoof calls to each of the four pods, first with `kpoof` alone, and
+# second to test port flag with `-p`
+
+kpoof_one_container_one_port() {
+    kpoof <<EOF
+    1
+    1
+EOF
+  }
+
+test1() {
+
+kpoof_one_container_one_port &
+pid=$!
+sleep 2
+
+echo ===
+echo PID is $pid, before kill:
+ps -ef | grep -E "PPID|$pid" | sed 's/^/   /'
+echo ===
+
+( kill -TERM $pid ) 2>&1
+sleep 2
+
+echo ===
+echo PID is $pid, after kill:
+ps -ef | grep -E "PPID|$pid" | sed 's/^/   /'
+echo ===
+
+}
+
+test1
